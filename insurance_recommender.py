@@ -1,5 +1,9 @@
-import pandas as pd 
+import streamlit as st
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Title
+st.title("📊 Insurance Product Recommendation Engine")
 
 # Load client and product data
 clients = pd.read_csv("clients.csv")
@@ -54,18 +58,12 @@ explanations = {
 # Step 5: Collaborative filtering setup
 known_product_codes = products['ProductCode'].tolist()
 
-# Identify valid numeric purchase columns
 purchase_cols = []
 for col in known_product_codes:
     if col in clients.columns and pd.api.types.is_numeric_dtype(clients[col]):
         purchase_cols.append(col)
 
-# Debug print
-print(f"Detected {len(purchase_cols)} valid purchase columns:", purchase_cols)
-
-# Handle empty purchase columns case
 if not purchase_cols:
-    print("No valid purchase columns found! Skipping collaborative recommendations.")
     purchase_matrix = pd.DataFrame()
 else:
     purchase_matrix = clients[purchase_cols].fillna(0).astype(float)
@@ -79,43 +77,45 @@ def collaborative_recommendation(client_index, top_n=3):
     similar_users = purchase_matrix.iloc[similar_indices]
     product_scores = similar_users.sum()
     current_user = purchase_matrix.iloc[client_index]
-    not_purchased = product_scores[current_user <1]
+    not_purchased = product_scores[current_user < 1]
     recommended = not_purchased.sort_values(ascending=False).head(top_n)
     return recommended
-    
 
+# --- UI Section ---
+st.sidebar.title("👤 Select Client")
+client_index = st.sidebar.slider("Client Index", 0, len(clients) - 1, 0)
 
-# Step 6: Run recommendation for a customer
-client_index = 0  # You can change this index
 sample = clients.iloc[client_index]
 types = recommend_insurance_types(sample)
 content_based = match_products(types, products.copy())
 
-print(f"\n👤 Client ID: {sample['ClientID']}")
-print(f"Age: {sample['Age']} years")
-print(f"Life Stage: {sample['LifeStage']}")
-print(f"Recommended Insurance Categories: {types}")
-print("\n Top Recommended Products (Content-Based):\n")
+# Display client info
+st.subheader(f"Client ID: {sample['ClientID']}")
+st.markdown(f"**Age:** {sample['Age']} years")
+st.markdown(f"**Life Stage:** {sample['LifeStage']}")
+st.markdown(f"**Recommended Insurance Categories:** `{', '.join(types)}`")
+
+# Content-Based Recommendations
+st.subheader("📌 Top Recommended Products (Content-Based)")
 
 for idx, row in enumerate(content_based.head(5).itertuples(), start=1):
     matched_types = set(row.InsuranceTypeList).intersection(types)
     reasons = " ".join([explanations.get(t, "") for t in matched_types])
     
-    print(f"{idx}. {row.ProductDescription}")
-    print(f"   • Insurance Types: {row.InsuranceTypeList}")
-    print(f"   • Why? {reasons}\n")
+    st.markdown(f"**{idx}. {row.ProductDescription}**")
+    st.markdown(f"• Insurance Types: `{row.InsuranceTypeList}`")
+    st.markdown(f"• 🧠 Why? _{reasons}_")
 
-# Step 7: Collaborative filtering output
-print("\n Collaborative Recommendations (Similar Users):\n")
-
+# Collaborative Filtering
+st.subheader("🤝 Collaborative Recommendations (Similar Users)")
 collab = collaborative_recommendation(client_index)
 
 if collab.empty or all(score <= 0 for score in collab):
-    print("Not enough data to generate collaborative recommendations.")
+    st.warning("Not enough data to generate collaborative recommendations.")
 else:
     for product_code, score in collab.items():
         if score > 0:
             desc_row = products[products['ProductCode'] == product_code]
             if not desc_row.empty:
                 desc = desc_row['ProductDescription'].values[0]
-                print(f"✔ {desc} ({product_code}) → Score: {score:.2f} (similar customers bought this)")
+                st.markdown(f"✔ **{desc}** ({product_code}) → _Score: {score:.2f}_")
